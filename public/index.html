@@ -401,19 +401,9 @@ dialog.detail{width:min(1100px,calc(100vw - 48px));height:calc(100dvh - 48px);ma
 .player{border-radius:20px;padding:18px;display:grid;gap:12px}
 .player .top{display:flex;gap:12px;align-items:center}
 .player .nm{font:700 20px/1.1 var(--font);letter-spacing:-.02em}
-.player .rank{font-size:13px;color:var(--t2)}
-.bar2{height:6px;background:var(--fill);border-radius:99px;overflow:hidden}
-.bar2 i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ff2d55,#ff9f0a)}
 .stats{display:flex;gap:22px;flex-wrap:wrap}
 .stats span{font-size:12.5px;color:var(--t2)}
 .stats b{display:block;font:700 22px/1.1 var(--font);color:var(--t1);letter-spacing:-.02em}
-.medals{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:22px 14px}
-.medal{display:grid;justify-items:center;text-align:center;gap:8px}
-.medal .m{width:78px;height:78px;border-radius:50%;display:grid;place-items:center;font:800 22px/1 var(--font);letter-spacing:-.02em;color:rgba(255,255,255,.25);background:radial-gradient(circle at 35% 30%,#2a2a2e,#141416);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.07)}
-.medal.on .m{color:#fff;background:radial-gradient(circle at 32% 28%,color-mix(in srgb,var(--mc) 55%,#fff),var(--mc) 55%,color-mix(in srgb,var(--mc) 55%,#000));box-shadow:inset 0 0 0 2px rgba(255,255,255,.35),0 12px 26px -10px var(--mc)}
-.medal b{font:600 13px/1.2 var(--font)}
-.medal small{font-size:12px;color:var(--t2);line-height:1.3;margin-top:-4px}
-.medal:not(.on) b{color:var(--t2)}
 .list{border-radius:18px;overflow:hidden}
 .lrow{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:14px;align-items:center;padding:10px 16px;position:relative}
 .lrow+.lrow::before{content:"";position:absolute;top:0;left:70px;right:0;height:.5px;background:var(--hair)}
@@ -575,7 +565,6 @@ const MOODS = {
   anim:{label:"Animated", g:["Animation"]},
 };
 const TIMES = {any:{label:"All night",max:999}, t90:{label:"≤ 1h 40",max:100}, t120:{label:"≤ 2h",max:120}, t150:{label:"≤ 2h 30",max:150}};
-const LEVELS = [[0,"Usher"],[60,"Ticket taker"],[150,"Projectionist"],[300,"Critic"],[500,"Programmer"],[800,"Auteur"]];
 const STATUS_LABEL = {watched:"Watched", want:"Want", nah:"Nah"};
 const icon = (id, cls = "") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 
@@ -622,39 +611,12 @@ function setMark(mid, patch){
 function persistMe(){ if (mode !== "api") saveLocal("tsc-marks", myMarks()) }
 function showSync(t){ const n = $("#syncnote"); n.textContent = t; n.hidden = false; clearTimeout(showSync._t); showSync._t = setTimeout(() => { if (!n.querySelector("form")) n.hidden = true }, 6000) }
 
-/* ---------- XP / badges ---------- */
+/* ---------- per-person counts ---------- */
 function statsFor(uid){
   const marks = people[uid]?.marks || {};
-  let xp = 0, watched = [], rated = 0;
-  for (const [mid, mk] of Object.entries(marks)){
-    const m = BYID[mid]; if (!m) continue;
-    if (mk.s === "watched"){ watched.push(m); xp += 10 + Math.floor((m.runtime || 90) / 30) * 3 }
-    if (mk.st){ rated++; xp += 2 }
-  }
-  const mine = nights.filter(n => n.by === uid);
-  xp += mine.length * 5;
-  let lvl = LEVELS[0], next = null;
-  for (let i = 0; i < LEVELS.length; i++){ if (xp >= LEVELS[i][0]){ lvl = LEVELS[i]; next = LEVELS[i+1] || null } }
-  return {xp, watched, rated, nights: mine, lvl, next};
-}
-function badgesFor(st){
-  const w = st.watched, g = name => w.filter(m => m.genres?.includes(name)).length;
-  const released = MOVIES.filter(m => !upcoming(m)).length;
-  const hour = n => new Date(n.at).getHours();
-  return [
-    ["First show", "Watch one film off the pile", w.length >= 1, "1", "#ff375f"],
-    ["Fearless", "3 horror films", g("Horror") >= 3, "H", "#bf5af2"],
-    ["Ink & paint", "3 animated films", g("Animation") >= 3, "A", "#64d2ff"],
-    ["Tissue box", "3 dramas", g("Drama") >= 3, "D", "#5e5ce6"],
-    ["Laugh track", "5 comedies", g("Comedy") >= 5, "C", "#ffd60a"],
-    ["Mind melt", "3 sci-fi or mystery", w.filter(m => m.genres?.some(x => x === "Science Fiction" || x === "Mystery")).length >= 3, "M", "#30d158"],
-    ["Old print", "Something from before 1990", w.some(m => m.year && m.year < 1990), "’89", "#ac8e68"],
-    ["Long haul", "A film over 2h 30", w.some(m => (m.runtime || 0) >= 150), "2½", "#ff9f0a"],
-    ["Both feeds", "One from WhatsApp, one from Instagram", w.some(m => m.source === "WhatsApp") && w.some(m => m.source === "Instagram"), "2", "#32d74b"],
-    ["Night owl", "Lock in a pick after 11 pm", st.nights.some(n => hour(n) >= 23 || hour(n) < 4), "11", "#0a84ff"],
-    ["No regrets", "Lock the first spin, zero vetoes", st.nights.some(n => n.vetoes === 0), "0", "#ff453a"],
-    ["Quarter pile", "25% of released films watched", released && w.length / released >= .25, "¼", "#ffd60a"],
-  ];
+  const watched = [], rated = Object.values(marks).filter(mk => mk.st).length;
+  for (const [mid, mk] of Object.entries(marks)) if (mk.s === "watched" && BYID[mid]) watched.push(BYID[mid]);
+  return {watched, rated, nights: nights.filter(n => n.by === uid)};
 }
 function weekKey(t){ const d = new Date(t); d.setHours(0,0,0,0); d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7); const y = new Date(d.getFullYear(),0,4); return d.getFullYear() + "-" + (1 + Math.round(((d - y) / 864e5 - 3 + (y.getDay() + 6) % 7) / 7)) }
 function streak(){
@@ -1169,7 +1131,6 @@ function renderBoard(){
   const released = MOVIES.filter(m => !upcoming(m)).length;
   const both = MOVIES.filter(m => !upcoming(m) && watchers(m.id).length >= 2).length;
   const any = MOVIES.filter(m => !upcoming(m) && watchers(m.id).length).length;
-  const mst = statsFor(me.id);
   $("#board").innerHTML = `
     <div><h2 class="lt">Scoreboard</h2><p class="sub">${MOVIES.length} films on the pile, ${MOVIES.length - released} still coming out.</p></div>
     <div class="rings glass">${rings([{frac: released ? any / released : 0, a:"#ff2d55", b:"#ff6482"}, {frac: released ? both / released : 0, a:"#30d158", b:"#a6ff00"}, {frac: Math.min(1, streak() / 4), a:"#0aa2ff", b:"#5ae4ff"}])}
@@ -1182,15 +1143,12 @@ function renderBoard(){
     ${tasteHTML()}
     <div class="grp"><h3 class="sec">Players</h3>
       <div class="players">${uids.map(u => {
-        const st = statsFor(u), nx = st.next, pct = nx ? (st.xp - st.lvl[0]) / (nx[0] - st.lvl[0]) : 1;
+        const st = statsFor(u);
         const nm = u === me.id ? (me.name || "You") : friendName(u);
         return `<div class="player glass"><div class="top"><span class="avatar" style="display:grid;place-items:center;${u === me.id ? "" : "background:linear-gradient(145deg,#64d2ff,#0a6ad6)"}">${esc(initials(nm) || "?")}</span>
-            <div><div class="nm">${esc(nm)}</div><div class="rank">${esc(st.lvl[1])} · ${st.xp} XP${nx ? ` · ${nx[0] - st.xp} to ${esc(nx[1])}` : " · top rank"}</div></div></div>
-          <div class="bar2"><i style="width:${Math.round(pct * 100)}%"></i></div>
-          <div class="stats"><span><b>${st.watched.length}</b>watched</span><span><b>${st.rated}</b>rated</span><span><b>${st.nights.length}</b>picks</span><span><b>${badgesFor(st).filter(b => b[2]).length}</b>awards</span></div></div>`;
+            <div class="nm">${esc(nm)}</div></div>
+          <div class="stats"><span><b>${st.watched.length}</b>watched</span><span><b>${st.rated}</b>rated</span><span><b>${st.nights.length}</b>picks</span></div></div>`;
       }).join("")}</div></div>
-    <div class="grp"><h3 class="sec">Your awards</h3>
-      <div class="medals">${badgesFor(mst).map(([n, d, on, g, c]) => `<div class="medal ${on ? "on" : ""}" style="--mc:${c}"><span class="m">${esc(g)}</span><b>${esc(n)}</b><small>${esc(d)}</small></div>`).join("")}</div></div>
     <div class="grp"><h3 class="sec">Past nights</h3>
       ${nights.length ? `<div class="list glass">${nights.slice(0, 30).map(n => { const m = BYID[n.mid] || {title:"?"};
         return `<div class="lrow">${m.poster ? `<img src="${esc(m.poster)}" alt="" loading="lazy">` : `<div class="phs"></div>`}<div style="min-width:0"><div class="t">${esc(m.title)}</div>
@@ -1366,9 +1324,8 @@ async function removeInbox(id){
 
 /* ---------- shell ---------- */
 function renderHeader(){
-  const st = statsFor(me.id);
   $("#meinit").textContent = (me.name || "You")[0].toUpperCase();
-  $("#mebox").title = `${me.name || "You"} · ${st.lvl[1]}${streak() ? ` · ${streak()}-week streak` : ""}`;
+  $("#mebox").title = `${me.name || "You"}${streak() ? ` · ${streak()}-week streak` : ""}`;
   const w = MOVIES.filter(m => watchers(m.id).length).length;
   $("#tally").textContent = `${MOVIES.length} films · ${w} watched`;
 }
