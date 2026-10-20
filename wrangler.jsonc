@@ -8,7 +8,7 @@
   "preview_urls": false,
   "routes": [{ "pattern": "movies.mnthn.com", "custom_domain": true }],
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/img"] },
-  "d1_databases": [{ "binding": "DB", "database_name": "two-seat", "database_id": "REPLACE_WITH_D1_ID" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "two-seat", "database_id": "915bb5a6-b2d2-4428-9fc2-67edba5435b1" }],
   "ai": { "binding": "AI" },
   "vars": {
     // Fill these after setting up Access (see README): your team domain and the app's AUD tag.
