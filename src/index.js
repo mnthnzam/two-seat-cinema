@@ -12,10 +12,18 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER)`,
   `CREATE TABLE IF NOT EXISTS art (imdb TEXT PRIMARY KEY, backdrop TEXT, at INTEGER)`,
 ];
+// CREATE TABLE IF NOT EXISTS never alters an existing table, so schema changes go here:
+// append [version, sql] (never edit an applied entry). Applied versions are tracked in meta.
+const MIGRATIONS = [];
 let schemaReady = false;
 async function ensureSchema(db) {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((q) => db.prepare(q)));
+  const cur = (await db.prepare(`SELECT v FROM meta WHERE k = 'schema'`).first())?.v || 0;
+  for (const [v, sql] of MIGRATIONS) {
+    if (v <= cur) continue;
+    await db.batch([db.prepare(sql), db.prepare(`INSERT INTO meta (k, v) VALUES ('schema', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(v)]);
+  }
   schemaReady = true;
 }
 
@@ -115,9 +123,9 @@ async function art(imdb, env, db) {
 
 // ---------- Workers AI pick ----------
 async function ask(env, q, candidates) {
-  const lines = candidates.slice(0, 150).map((m) => `${m.id}|${clip(m.title, 80)}|${m.year || ""}|${(m.genres || []).join("/")}|${m.runtime || "?"}m|${clip(m.overview, 90)}`).join("\n");
+  const lines = candidates.slice(0, 150).map((m) => `${m.id}|${clip(m.title, 80)}|${m.year || ""}|${(m.genres || []).join("/")}|${m.runtime || "?"}m|want:${Math.min(2, Number(m.wants) || 0)}|${clip(m.overview, 90)}`).join("\n");
   const prompt = `Two friends want to pick a film tonight. Their request: "${clip(q, 200)}"
-Choose exactly one film from this list (id|title|year|genres|runtime|synopsis). Only pick from the list.
+Choose exactly one film from this list (id|title|year|genres|runtime|want|synopsis). want = how many of the two of them marked it Want (2 = both). Prefer higher want when it fits the request. Only pick from the list.
 ${lines}
 Reply with JSON only, no other text: {"id": <number from the list>, "why": "<one short, warm sentence to them, max 20 words>"}`;
   const models = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct"];

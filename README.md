@@ -5,7 +5,7 @@ A movie-night app for two people, built from the films we kept talking about on 
 - **Static app:** everything in `public/` is the app: `index.html`, `data.json` and the posters.
 - **API:** `src/index.js` serves `/api/*` and stores state in D1.
 - **Inbox lookups:** new films are looked up through RapidAPI's Streaming Availability API.
-- **Ask Claude:** the "Ask Claude" box in Tonight uses Workers AI.
+- **Ask:** the "Or just say it" box in Tonight uses Workers AI (Llama, not Claude).
 - **Sign-in:** Cloudflare Access with an email one-time code. Only the two allowed emails get in.
 
 ## One-time setup (Cloudflare dashboard, about 10 minutes)
@@ -41,7 +41,7 @@ A movie-night app for two people, built from the films we kept talking about on 
 - **Backdrops:** the hero and the detail page ask `/api/art?imdb=…` for landscape key art. Each film costs one RapidAPI call the first time it's shown, and the answer (including "none") is kept in the D1 `art` table, so the whole pile costs at most one call per film, ever. Without the key, or before a film's art arrives, the page falls back to a blurred poster.
   - A pasted link is saved without a lookup until someone types the film's title on it.
 - **Inbox posters:** they come through `/img`, which only proxies `cdn.movieofthenight.com` and caches for 30 days.
-- **Ask Claude:** runs on Workers AI (`llama-3.3-70b-instruct-fp8-fast`, falling back to `llama-3.1-8b-instruct`). It stays inside the free daily allowance at this usage.
+- **Ask:** runs on Workers AI (`llama-3.3-70b-instruct-fp8-fast`, falling back to `llama-3.1-8b-instruct`). It stays inside the free daily allowance at this usage.
 
 ## Local development
 

@@ -586,8 +586,9 @@ let people = {};          // uid -> {marks:{}}
 let nights = [];          // [{id, mid, at, by, vetoes, done}]
 let names = {};           // uid -> display name
 const ui = loadLocal("tsc-ui", {view:"pile", q:"", sort:"list", status:"all", genres:[], plats:[], len:"any", src:"all", hideSoon:false,
-  mood:"any", time:"any", tplats:[], rules:{unwatched:true, released:true, rent:false, wantFirst:false}});
-let spin = {vetoes:3, current:null, spinning:false};
+  mood:"any", time:"any", tplats:[], rules:{unwatched:true, released:true, rent:false, plain:false, nostream:false}});
+const newSpin = () => ({vetoes:3, vetoed:[], current:null, spinning:false});
+let spin = newSpin();
 let inbox = [], duel = null;
 ui.langs ||= []; ui.rules.deep ??= false; ui.browse ??= false; ui.gtitle ??= "";
 const ART = loadLocal("tsc-art", {});   // imdb -> backdrop url ("" = none)
@@ -605,7 +606,9 @@ const otherUid = () => Object.keys(people).find(x => x !== me.id);
 /* ---------- marks ---------- */
 const myMarks = () => (people[me.id] ||= {marks:{}}).marks;
 const markOf = (uid, mid) => people[uid]?.marks?.[mid] || null;
-function upcoming(m){ return !m.matched || (m.year > 2026) || (m.year === 2026 && !m.stream?.length && !m.rating) }
+const THIS_YEAR = new Date().getFullYear();
+function upcoming(m){ return !m.matched || (m.year > THIS_YEAR) || (m.year === THIS_YEAR && !m.stream?.length && !m.rating) }
+const wantCount = mid => Object.values(people).filter(x => x.marks?.[mid]?.s === "want").length;
 function watchers(mid){ return Object.keys(people).filter(u => people[u].marks?.[mid]?.s === "watched") }
 
 function setMark(mid, patch){
@@ -655,7 +658,7 @@ function badgesFor(st){
 }
 function weekKey(t){ const d = new Date(t); d.setHours(0,0,0,0); d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7); const y = new Date(d.getFullYear(),0,4); return d.getFullYear() + "-" + (1 + Math.round(((d - y) / 864e5 - 3 + (y.getDay() + 6) % 7) / 7)) }
 function streak(){
-  const weeks = new Set(nights.map(n => weekKey(n.at))); let s = 0, t = Date.now();
+  const weeks = new Set(nights.filter(n => n.done && n.watched).map(n => weekKey(n.at))); let s = 0, t = Date.now();
   if (!weeks.has(weekKey(t))) t -= 7 * 864e5;
   while (weeks.has(weekKey(t))){ s++; t -= 7 * 864e5 }
   return s;
@@ -717,6 +720,7 @@ function bestStream(m){
   const s = m.stream || [];
   return s.find(x => ui.tplats.includes(x.name) && x.type === "subscription") || s.find(x => x.type === "subscription") || s[0] || null;
 }
+const findLink = m => "https://www.justwatch.com/in/search?q=" + encodeURIComponent(m.title);
 const trailerOf = m => m.trailer || "https://www.youtube.com/results?search_query=" + encodeURIComponent(m.title + " " + (m.year || "") + " trailer");
 
 /* ---------- PILE: hero ---------- */
@@ -958,6 +962,7 @@ function openDetail(id){
       <div class="meta">${metaHTML(m)}</div>
       <div class="acts">
         ${s ? `<a class="pbtn" href="${esc(s.link)}" target="_blank" rel="noopener">${icon("play")}Play on ${esc(s.name)}</a>` : `<a class="pbtn" href="${esc(trailerOf(m))}" target="_blank" rel="noopener">${icon("play")}Trailer</a>`}
+        ${s || upcoming(m) ? "" : `<a class="gbtn glass" href="${esc(findLink(m))}" target="_blank" rel="noopener">${icon("search")}Where to watch</a>`}
         <button class="gbtn glass" type="button" id="spinthis">${icon("moon")}Tonight's pick</button>
       </div>
       <div class="acts" style="margin-top:0">${markBtn("want","plus","Want")}${markBtn("watched","check","Watched")}${markBtn("nah","x","Nah")}</div>
@@ -1023,7 +1028,8 @@ function renderTonightControls(){
     chip("Neither of us has seen it", R.unwatched, () => { R.unwatched = !R.unwatched; renderTonightControls() }),
     chip("Out now", R.released, () => { R.released = !R.released; renderTonightControls() }),
     chip("Rentals OK", R.rent, () => { R.rent = !R.rent; renderTonightControls() }),
-    chip("Wants count double", R.wantFirst, () => { R.wantFirst = !R.wantFirst; renderTonightControls() }),
+    chip("Favour what we want", !R.plain, () => { R.plain = !R.plain; renderTonightControls() }),
+    chip("Include films with no stream", !!R.nostream, () => { R.nostream = !R.nostream; renderTonightControls() }),
     chip("Deep cuts only", R.deep, () => { R.deep = !R.deep; renderTonightControls() }),
   ]);
   const p = pool();
@@ -1047,23 +1053,24 @@ function pool(){
     if (max < 999 && (m.runtime || 120) > max) return false;
     if (ui.tplats.length){
       const ok = (m.stream || []).some(s => ui.tplats.includes(s.name) && (R.rent || s.type === "subscription" || s.type === "free" || s.type === "addon"));
-      if (!ok) return false;
+      if (!ok && !(R.nostream && !m.stream?.length)) return false;
     }
     return true;
   });
 }
 function weightedPick(p){
-  const w = p.map(m => 1 + (ui.rules.wantFirst ? Object.values(people).filter(x => x.marks?.[m.id]?.s === "want").length * 2 : 0));
+  const w = p.map(m => ui.rules.plain ? 1 : [1, 4, 12][Math.min(2, wantCount(m.id))]); // both want > one wants > neither
   let r = Math.random() * w.reduce((a,b) => a + b, 0);
   for (let i = 0; i < p.length; i++){ r -= w[i]; if (r <= 0) return p[i] }
   return p[p.length - 1];
 }
 function doSpin(){
   if (spin.spinning) return;
-  if (spin.current && !spin.locked){ if (spin.vetoes <= 0) return; spin.vetoes-- }
-  if (spin.locked){ spin = {vetoes:3, current:null, spinning:false} }
+  if (spin.current && !spin.locked){ if (spin.vetoes <= 0) return; spin.vetoes--; (spin.vetoed ||= []).push(spin.current.id) }
+  if (spin.locked){ spin = newSpin() }
   let p = pool(); if (!p.length) return;
   if (spin.current && p.length > 1) p = p.filter(m => m.id !== spin.current.id);
+  if (spin.vetoed?.length){ const rest = p.filter(m => !spin.vetoed.includes(m.id)); if (rest.length) p = rest }
   land(weightedPick(p), false, p);
 }
 const setGlow = m => { $("#glow").style.backgroundImage = m?.poster ? `url('${m.poster}')` : "" };
@@ -1099,13 +1106,13 @@ function showTicket(){
         <div class="pf"><small>Picked</small><b>${esc(when)}</b></div>
         <div class="pf"><small>Runtime</small><b>${mins(m.runtime)}</b></div>
         <div class="pf"><small>Score</small><b>${m.rating || "—"}</b></div>
-        <div class="pf"><small>On</small><b>${s ? esc(s.name) : "Find it"}</b></div>
+        <div class="pf"><small>On</small><b>${s ? esc(s.name) : "Not streaming"}</b></div>
       </div>
       <div class="pfoot"><div class="code" aria-hidden="true">${barcode(m.id)}</div><div class="pnum">No.<br>${serial}</div></div>
     </div>
     <div class="tactions">
       <button class="gbtn glass sm" type="button" id="tdetail">${icon("info")}Details</button>
-      ${s ? `<a class="gbtn glass sm" href="${esc(s.link)}" target="_blank" rel="noopener">${icon("play")}${esc(s.name)}</a>` : ""}
+      ${s ? `<a class="gbtn glass sm" href="${esc(s.link)}" target="_blank" rel="noopener">${icon("play")}${esc(s.name)}</a>` : `<a class="gbtn glass sm" href="${esc(findLink(m))}" target="_blank" rel="noopener">${icon("search")}Where to watch</a>`}
       <button class="pbtn sm" type="button" id="tlock">Lock it in</button>
     </div>`;
   $("#tdetail").onclick = () => openDetail(m.id);
@@ -1137,7 +1144,7 @@ function renderShowing(){
   if (!spin.current){ $("#reelidle").hidden = true; $("#strip").innerHTML = m.poster ? `<img src="${esc(m.poster)}" alt="">` : `<div class="ph">${esc(m.title)}</div>`; $("#strip").style.transform = "none"; setGlow(m) }
   const cb = $("#calbtn"); if (cb){ const upd = () => cb.href = calLink(m); upd(); $("#caltime").oninput = upd; $("#calmail").oninput = upd }
   $("#sawit").onclick = async () => { setMark(m.id, {s: "watched"}); await finishNight(open, true); openDetail(m.id) };
-  $("#bail").onclick = async () => { await finishNight(open, false); spin = {vetoes:3, current:null, spinning:false}; $("#ticketzone").innerHTML = ""; $("#strip").innerHTML = ""; $("#reelidle").hidden = false; setGlow(null) };
+  $("#bail").onclick = async () => { await finishNight(open, false); spin = newSpin(); $("#ticketzone").innerHTML = ""; $("#strip").innerHTML = ""; $("#reelidle").hidden = false; setGlow(null) };
 }
 async function finishNight(n, watched){
   n.done = true; n.watched = watched;
@@ -1160,8 +1167,8 @@ function rings(list, size = 180){
 function renderBoard(){
   const uids = [...new Set([me.id, ...Object.keys(people)])];
   const released = MOVIES.filter(m => !upcoming(m)).length;
-  const both = MOVIES.filter(m => watchers(m.id).length >= 2).length;
-  const any = MOVIES.filter(m => watchers(m.id).length).length;
+  const both = MOVIES.filter(m => !upcoming(m) && watchers(m.id).length >= 2).length;
+  const any = MOVIES.filter(m => !upcoming(m) && watchers(m.id).length).length;
   const mst = statsFor(me.id);
   $("#board").innerHTML = `
     <div><h2 class="lt">Scoreboard</h2><p class="sub">${MOVIES.length} films on the pile, ${MOVIES.length - released} still coming out.</p></div>
@@ -1228,7 +1235,7 @@ function renderDuel(){
         <span class="vote yes">YES</span><span class="vote no">NOPE</span>
         <div class="cap"><b>${esc(m.title)}</b><span>${m.year || ""} · ${mins(m.runtime)} · ${esc((m.genres||[]).slice(0,2).join(", "))}</span></div></div></div>
       <div class="dbtns"><button class="n glass" type="button" id="dno" aria-label="No">${icon("x")}</button><button class="i glass" type="button" id="dinfo" aria-label="Details">${icon("info")}</button><button class="y glass" type="button" id="dyes" aria-label="Yes">${icon("check")}</button></div>
-      <p class="who">Swipe right for yes, left for no. Arrow keys work too.</p>`;
+      <p class="who">Swipe right for yes, left for no. Arrow keys work too. Dealt by ${esc(duel.by === me.id ? "you" : friendName(duel.by))} from their Tonight filters.</p>`;
     $("#dno").onclick = () => fling(next, false); $("#dyes").onclick = () => fling(next, true); $("#dinfo").onclick = () => openDetail(next);
     dragify($("#scard"), v => vote(next, v));
     return;
@@ -1247,11 +1254,13 @@ function renderDuel(){
     <p>${matches.length ? "You both said yes to these." : "Nothing you both wanted. Deal again."}</p>
     ${matches.length ? `<div class="matches">${matches.map(cardHTML).join("")}</div>` : ""}
     <div class="tactions">${matches.length ? `<button class="pbtn sm" type="button" id="dspin">Spin from the matches</button>` : ""}<button class="gbtn glass sm" type="button" id="dnew">Deal a new hand</button></div>`;
-  if ($("#dspin")) $("#dspin").onclick = () => { go("tonight"); spin = {vetoes:3, current:null, spinning:false}; land(matches[Math.floor(Math.random() * matches.length)], matches.length < 2, matches, "From your swipe duel: you both said yes.") };
+  if ($("#dspin")) $("#dspin").onclick = () => { go("tonight"); spin = newSpin(); land(matches[Math.floor(Math.random() * matches.length)], matches.length < 2, matches, "From your swipe duel: you both said yes.") };
   $("#dnew").onclick = startDuel;
 }
 async function startDuel(){
   const p = pool().slice(); if (p.length < 3) return;
+  const n = duel?.cards?.length || 0;
+  if (duelVoters().some(u => u !== me.id && doneCount(u) > 0 && doneCount(u) < n) && !confirm(`${friendName(duelVoters().find(u => u !== me.id))} is partway through this hand. Deal a new one and lose their swipes?`)) return;
   for (let i = p.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]] }
   const body = {cards: p.slice(0, 10).map(m => m.id), at: Date.now(), by: me.id, votes: {}};
   if (mode === "api"){ try{ await api("POST", "/duel", {cards: body.cards}) }catch(e){ toast("Couldn't deal. Try again."); return } }
@@ -1297,9 +1306,9 @@ async function askClaude(){
   if (p.length > 150) p = p.sort(() => Math.random() - .5).slice(0, 150);
   msg.hidden = false; msg.textContent = "Thinking…"; $("#askbtn").disabled = true;
   try{
-    const r = await api("POST", "/ask", {q, candidates: p.map(m => ({id: m.id, title: m.title, year: m.year, genres: m.genres, runtime: m.runtime, overview: m.overview}))});
+    const r = await api("POST", "/ask", {q, candidates: p.map(m => ({id: m.id, title: m.title, year: m.year, genres: m.genres, runtime: m.runtime, overview: m.overview, wants: wantCount(m.id)}))});
     const m = p.find(x => x.id === r.id); if (!m) throw 0;
-    msg.hidden = true; spin = {vetoes:3, current:null, spinning:false}; land(m, false, p, r.why);
+    msg.hidden = true; spin = newSpin(); land(m, false, p, r.why);
   }catch(e){ msg.textContent = "Couldn't get a pick. Spin the reel instead." }
   finally{ $("#askbtn").disabled = false }
 }
