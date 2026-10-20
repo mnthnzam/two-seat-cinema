@@ -38,6 +38,7 @@ A movie-night app for two people, built from the films we kept talking about on 
   - It sends the last version number. Unchanged state comes back as `{same: true}`, which costs almost nothing.
 - **Marks:** one row per person per film (`marks`). Nights, the current duel, duel votes and the inbox each have their own table.
 - **Inbox lookups:** a pasted title triggers one RapidAPI call. The free plan allows 1,000 calls a month.
+- **Backdrops:** the hero and the detail page ask `/api/art?imdb=…` for landscape key art. Each film costs one RapidAPI call the first time it's shown, and the answer (including "none") is kept in the D1 `art` table, so the whole pile costs at most one call per film, ever. Without the key, or before a film's art arrives, the page falls back to a blurred poster.
   - A pasted link is saved without a lookup until someone types the film's title on it.
 - **Inbox posters:** they come through `/img`, which only proxies `cdn.movieofthenight.com` and caches for 30 days.
 - **Ask Claude:** runs on Workers AI (`llama-3.3-70b-instruct-fp8-fast`, falling back to `llama-3.1-8b-instruct`). It stays inside the free daily allowance at this usage.

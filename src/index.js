@@ -10,6 +10,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS duel_votes (uid TEXT, mid INTEGER, yes INTEGER, PRIMARY KEY (uid, mid))`,
   `CREATE TABLE IF NOT EXISTS inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, link TEXT, by TEXT, at INTEGER, details TEXT, status TEXT)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS art (imdb TEXT PRIMARY KEY, backdrop TEXT, at INTEGER)`,
 ];
 let schemaReady = false;
 async function ensureSchema(db) {
@@ -91,9 +92,25 @@ async function lookup(title, env) {
   return {
     matched: true, title: b.title, orig: b.originalTitle !== b.title ? b.originalTitle : null, year: b.releaseYear, runtime: b.runtime || null,
     rating: b.rating || null, genres: (b.genres || []).map((g) => g.name), directors: (b.directors || []).slice(0, 2), cast: (b.cast || []).slice(0, 5),
-    overview: b.overview || "", imdb: b.imdbId || null, poster: b.imageSet?.verticalPoster?.w360 || null, lang: [],
+    overview: b.overview || "", imdb: b.imdbId || null, poster: b.imageSet?.verticalPoster?.w360 || null, backdrop: backdropOf(b), lang: [],
     stream: Object.values(svc).map(({ _r, ...v }) => v),
   };
+}
+
+// Landscape key art for the hero and the detail sheet. One RapidAPI call per film, ever: the answer
+// (including "none") is kept in D1, so the whole pile costs at most one call per title.
+const backdropOf = (b) => { const s = b?.imageSet?.horizontalBackdrop || {}; return s.w1080 || s.w720 || s.w1440 || null; };
+async function art(imdb, env, db) {
+  const row = await db.prepare(`SELECT backdrop FROM art WHERE imdb = ?`).bind(imdb).first();
+  if (row) return row.backdrop || null;
+  if (!env.RAPIDAPI_KEY) return null;
+  const host = "streaming-availability.p.rapidapi.com";
+  const r = await fetch(`https://${host}/shows/${imdb}?country=in&output_language=en`, { headers: { "x-rapidapi-key": env.RAPIDAPI_KEY, "x-rapidapi-host": host } });
+  if (!r.ok && r.status !== 404) return null; // transient: don't remember a failure
+  const b = r.ok ? await r.json() : null;
+  const url = backdropOf(b);
+  await db.prepare(`INSERT INTO art (imdb, backdrop, at) VALUES (?, ?, ?) ON CONFLICT(imdb) DO NOTHING`).bind(imdb, url || "", Date.now()).run();
+  return url;
 }
 
 // ---------- Workers AI pick ----------
@@ -218,6 +235,13 @@ async function api(req, env, url) {
   if (inboxMatch && M === "DELETE") {
     await db.prepare(`DELETE FROM inbox WHERE id = ? AND by = ?`).bind(Number(inboxMatch[1]), me).run();
     await bump(db); return json({ ok: true });
+  }
+  if (path === "/art" && M === "GET") {
+    const imdb = url.searchParams.get("imdb") || "";
+    if (!/^tt\d{5,10}$/.test(imdb)) return bad("imdb");
+    let u = null; try { u = await art(imdb, env, db); } catch {}
+    return new Response(JSON.stringify({ backdrop: u ? "/img?u=" + encodeURIComponent(u) : null }),
+      { headers: { "content-type": "application/json", "cache-control": "private, max-age=2592000" } });
   }
   if (path === "/ask" && M === "POST") {
     if (!env.AI) return bad("AI not configured", 503);
