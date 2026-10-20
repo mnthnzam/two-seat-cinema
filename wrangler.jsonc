@@ -12,8 +12,8 @@
   "ai": { "binding": "AI" },
   "vars": {
     // Fill these after setting up Access (see README): your team domain and the app's AUD tag.
-    "ACCESS_TEAM_DOMAIN": "REPLACE.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_WITH_AUD_TAG"
+    "ACCESS_TEAM_DOMAIN": "mnthn.cloudflareaccess.com",
+    "ACCESS_AUD": "126ff33778032128aa558b7c5a131398df5d51e23b620161ffd344ac810774fa"
   },
   "observability": { "enabled": true }
 }
