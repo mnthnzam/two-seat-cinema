@@ -58,3 +58,27 @@ npx wrangler dev -c wrangler.test.json --local
 ## Refreshing the original 208 films
 
 The base pile (`public/data.json`, `public/posters/`) is a snapshot from 20 Oct 2026. It was built with the scripts in the Claude session that made this app. Ask Claude to "refresh the pile" to re-check streaming availability; that uses about 210 RapidAPI calls.
+
+## Android TV app (`tv/`)
+
+A full-screen WebView on movies.mnthn.com for Android TV / Mi TV Stick. The site detects `TwoSeatTV` in the user agent and switches to TV mode: arrow keys move focus, focus rings are larger, and the remote's Back closes sheets, then returns to The Pile, then leaves the app. Open `https://movies.mnthn.com/?tv` in a desktop browser to try TV mode with a keyboard.
+
+- **Sign-in:** Cloudflare Access email code, typed once with the remote. The cookie is kept, so you only redo it when the Access session expires. Whoever signs in on the TV is who its marks and swipes count as.
+- **Links out** (Netflix, Prime, YouTube trailers, JustWatch) open the TV's own app if one is installed, otherwise a toast says so.
+
+### Install on the Mi TV Stick
+1. On the stick: Settings → Device Preferences → About → click **Build** 7 times. Then Device Preferences → Developer options → turn on **USB debugging** (Network debugging, if shown).
+2. Settings → Device Preferences → Security & restrictions → allow **Unknown sources** for the app you'll install from.
+3. Either:
+   - **adb (laptop on the same Wi-Fi):** `adb connect <stick-ip>:5555`, accept the prompt on the TV, then `adb install -r two-seat-cinema-tv.apk`.
+   - **No laptop:** install *Send Files to TV* on the stick and your phone, send the APK, open it on the TV.
+4. The app appears in the Apps row with the Two-Seat Cinema banner.
+
+### Build
+Needs JDK 17+, Gradle 8.9+, Android SDK (platform 35, build-tools 35).
+```
+cd tv
+echo "sdk.dir=/path/to/android-sdk" > local.properties
+gradle assembleRelease   # app/build/outputs/apk/release/app-release.apk
+```
+Release signing reads `tv/keystore.properties` + the keystore it names (both gitignored). Keep that keystore: an update signed with a different key won't install over the old app, and uninstalling wipes the sign-in. Bump `versionCode` in `tv/app/build.gradle` for each update.

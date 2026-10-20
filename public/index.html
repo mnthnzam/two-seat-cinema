@@ -426,6 +426,15 @@ dialog.detail{width:min(1100px,calc(100vw - 48px));height:calc(100dvh - 48px);ma
 @media (max-width:760px){.syncnote form{width:calc(100vw - 52px)}.syncnote label{flex:1 1 100%}.syncnote .field{flex:1}.toast{bottom:calc(98px + env(safe-area-inset-bottom,0px))}.syncnote{top:calc(58px + env(safe-area-inset-top,0px))}}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.12s!important}.slide.on .hart *{animation:none!important}}
 @media (prefers-reduced-transparency: reduce){.glass,.sheet,.bar::after,.tag{background:#1c1c1e!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}}
+
+/* TV mode: 10-foot focus. Hover effects never fire on a remote, so focus has to carry them. */
+.tv :focus-visible,.tv :focus{outline:4px solid #fff;outline-offset:4px;border-radius:12px}
+.tv .card:focus .pwrap{--s:1.08;outline:4px solid #fff;outline-offset:4px}
+.tv .card:focus .gloss{opacity:1}
+.tv .chip:focus,.tv .tab:focus{transform:scale(1.06)}
+.tv .harr,.tv .rarr{display:none}
+.tv .tab{white-space:nowrap}
+.tv{scroll-behavior:smooth}
 </style>
 </head><body>
 
@@ -1251,7 +1260,7 @@ function dragify(card, cb){
   card.addEventListener("pointerup", end); card.addEventListener("pointercancel", end);
 }
 document.addEventListener("keydown", e => {
-  if (ui.view !== "duel" || dlg.open || !$("#scard")) return;
+  if (ui.view !== "duel" || dlg.open || !$("#scard") || document.activeElement?.closest?.(".bar")) return;
   if (e.key === "ArrowRight") $("#dyes").click(); if (e.key === "ArrowLeft") $("#dno").click();
 });
 
@@ -1428,5 +1437,82 @@ async function connect(){
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll() });
 }
 boot();
+
+/* ---------- TV mode (Android TV app, or ?tv) ----------
+   The TV app's WebView has no spatial navigation, so arrow keys move focus here.
+   Existing handlers (shelf rows, duel swipes) run first and win when they act. */
+const TV = /TwoSeatTV/.test(navigator.userAgent) || new URLSearchParams(location.search).has("tv");
+if (TV){
+  document.documentElement.classList.add("tv");
+  const FOC = 'button:not([disabled]):not([tabindex="-1"]),a[href]:not([tabindex="-1"]),input:not([type=hidden]):not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
+  const visible = el => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return false; const cs = getComputedStyle(el); return cs.visibility !== "hidden" && cs.display !== "none" && !el.closest("[hidden]") };
+  const scope = () => [...document.querySelectorAll("dialog[open]")].pop() || document;
+  const candidates = () => [...scope().querySelectorAll(FOC)].filter(el => (scope() !== document || !el.closest("dialog")) && visible(el));
+  const DIR = {ArrowRight:[1,0], ArrowLeft:[-1,0], ArrowDown:[0,1], ArrowUp:[0,-1]};
+  // The fixed top bar overlaps the page, so it is only reachable by pressing Up past the top of the content.
+  const CHROME = ".bar,.syncnote";
+  const inChrome = el => scope() === document && !!el.closest(CHROME);
+  function nearest(from, d){
+    const all = candidates(), page = all.filter(el => !inChrome(el)), chrome = all.filter(inChrome);
+    if (inChrome(from)){
+      if (d[1] > 0){ const top = chrome.reduce((m, el) => Math.max(m, el.getBoundingClientRect().bottom), 0);
+        return page.find(el => el.getBoundingClientRect().top >= top) || page[0] || null }
+      return pick(from, d, chrome);
+    }
+    return pick(from, d, page) || (d[1] < 0 ? (scrollTo({top: 0}), pick(from, d, chrome) || chrome[0] || null) : null);
+  }
+  function pick(from, [dx, dy], list){
+    const a = from.getBoundingClientRect(); let best = null, bs = Infinity;
+    for (const el of list){
+      if (el === from || el.contains(from) || from.contains(el)) continue;
+      const b = el.getBoundingClientRect();
+      // gap along the direction, edge to edge; must be ahead of us
+      // ahead = centre is past ours in that direction; gap = edge to edge (0 if they overlap)
+      const ac = [(a.left + a.right) / 2, (a.top + a.bottom) / 2], bc = [(b.left + b.right) / 2, (b.top + b.bottom) / 2];
+      if ((dx && (bc[0] - ac[0]) * dx < 8) || (dy && (bc[1] - ac[1]) * dy < 8)) continue;
+      const along = dx > 0 ? b.left - a.right : dx < 0 ? a.left - b.right : dy > 0 ? b.top - a.bottom : a.top - b.bottom;
+      // sideways offset between centres; overlapping bands cost nothing
+      const side = dx ? Math.max(0, Math.max(a.top, b.top) - Math.min(a.bottom, b.bottom)) + (Math.abs((a.top + a.bottom) - (b.top + b.bottom)) / 2) * .3
+                      : Math.max(0, Math.max(a.left, b.left) - Math.min(a.right, b.right)) + (Math.abs((a.left + a.right) - (b.left + b.right)) / 2) * .3;
+      const score = Math.max(0, along) + side * 2.5;
+      if (score < bs){ bs = score; best = el }
+    }
+    return best;
+  }
+  function focusEl(el){
+    el.focus({preventScroll: true});
+    el.scrollIntoView({block: el.closest(".row") ? "nearest" : "center", inline: "nearest", behavior: reduceMotion() ? "auto" : "smooth"});
+  }
+  document.addEventListener("keydown", e => {
+    const d = DIR[e.key]; if (!d || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (ui.view === "duel" && $("#scard") && d[0] && scope() === document && !document.activeElement?.closest?.(".bar")) return; // left/right are votes
+    const cur = document.activeElement;
+    const typing = cur && (cur.tagName === "TEXTAREA" || (cur.tagName === "INPUT" && !/^(button|checkbox|radio|range|submit)$/.test(cur.type)));
+    if (typing && d[0]){ const v = cur.value || "", at = cur.selectionStart; if ((d[0] < 0 && at > 0) || (d[0] > 0 && at < v.length)) return }
+    let t = null;
+    if (!cur || cur === document.body || !scope().contains(cur) || !visible(cur)){
+      t = candidates().find(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight }) || candidates()[0];
+    } else t = nearest(cur, d);
+    if (t){ e.preventDefault(); focusEl(t) }
+    else if (d[1]){ e.preventDefault(); scrollBy({top: d[1] * innerHeight * .4, behavior: reduceMotion() ? "auto" : "smooth"}) }
+  });
+  // Called by the app when the remote's Back is pressed. Return true if handled, false to leave the app.
+  window.tvBack = () => {
+    const open = [...document.querySelectorAll("dialog[open]")].pop();
+    if (open){ closeDlg(open); return true }
+    if (ui.view !== "pile"){ go("pile"); return true }
+    if (scrollY > 40){ scrollTo({top: 0, behavior: reduceMotion() ? "auto" : "smooth"}); document.activeElement?.blur?.(); return true }
+    return false;
+  };
+  // Open dialogs on the first real control rather than the corner Close button.
+  document.querySelectorAll("dialog").forEach(dd => new MutationObserver(() => { if (dd.open) setTimeout(() => {
+    const f = [...dd.querySelectorAll(FOC)].find(el => visible(el) && !el.matches("[data-close],.x,.dclose"));
+    if (f && (!dd.contains(document.activeElement) || document.activeElement.matches("[data-close],.x,.dclose"))) f.focus({preventScroll: true});
+  }, 60) }).observe(dd, {attributes: true, attributeFilter: ["open"]}));
+  // Hand focus back to the opener when a dialog closes, so the remote never lands on nothing.
+  let opener = null;
+  document.addEventListener("focusin", e => { if (!e.target.closest("dialog")) opener = e.target });
+  document.querySelectorAll("dialog").forEach(dd => dd.addEventListener("close", () => setTimeout(() => { if (opener && document.contains(opener) && visible(opener)) opener.focus({preventScroll: true}) }, 30)));
+}
 </script>
 </body></html>
