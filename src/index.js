@@ -208,8 +208,16 @@ async function api(req, env, url) {
     await bump(db); return json({ ok: true });
   }
   if (path === "/duel" && M === "POST") {
-    const { cards } = await body(req);
+    const { cards, force } = await body(req);
     if (!Array.isArray(cards) || !cards.length || cards.length > 20 || !cards.every(Number.isInteger)) return bad("cards");
+    if (!force) {
+      // Don't wipe a hand the other person is partway through, even if this client's view is stale.
+      const cur = await db.prepare(`SELECT cards FROM duel WHERE id = 1`).first();
+      const n = cur ? JSON.parse(cur.cards).length : 0;
+      const { results } = await db.prepare(`SELECT uid, COUNT(*) AS c FROM duel_votes WHERE uid != ? GROUP BY uid`).bind(me).all();
+      const mid = results.find((r) => r.c > 0 && r.c < n);
+      if (mid) return json({ error: "partner-mid-hand", uid: mid.uid }, 409);
+    }
     await db.batch([
       db.prepare(`DELETE FROM duel_votes`),
       db.prepare(`INSERT INTO duel (id, cards, at, by) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET cards = excluded.cards, at = excluded.at, by = excluded.by`).bind(JSON.stringify(cards), Date.now(), me),

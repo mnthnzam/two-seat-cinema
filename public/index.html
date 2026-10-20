@@ -1227,10 +1227,20 @@ function renderDuel(){
 async function startDuel(){
   const p = pool().slice(); if (p.length < 3) return;
   const n = duel?.cards?.length || 0;
-  if (duelVoters().some(u => u !== me.id && doneCount(u) > 0 && doneCount(u) < n) && !confirm(`${friendName(duelVoters().find(u => u !== me.id))} is partway through this hand. Deal a new one and lose their swipes?`)) return;
+  const partial = duelVoters().some(u => u !== me.id && doneCount(u) > 0 && doneCount(u) < n);
+  if (partial && !confirm(`${friendName(duelVoters().find(u => u !== me.id))} is partway through this hand. Deal a new one and lose their swipes?`)) return;
   for (let i = p.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]] }
   const body = {cards: p.slice(0, 10).map(m => m.id), at: Date.now(), by: me.id, votes: {}};
-  if (mode === "api"){ try{ await api("POST", "/duel", {cards: body.cards}) }catch(e){ toast("Couldn't deal. Try again."); return } }
+  if (mode === "api"){
+    // The server refuses (409) if the other person has swiped since our last sync; ask before overriding.
+    const deal = force => api("POST", "/duel", {cards: body.cards, force});
+    try{ await deal(partial) }
+    catch(e){
+      if (e.status !== 409){ toast("Couldn't deal. Try again."); return }
+      if (!confirm(`${friendName(e.body?.uid || otherUid())} has started swiping this hand. Deal a new one and lose their swipes?`)) return;
+      try{ await deal(true) }catch(e2){ toast("Couldn't deal. Try again."); return }
+    }
+  }
   else saveLocal("tsc-duel", body);
   duel = body; renderDuel();
 }
@@ -1391,7 +1401,7 @@ async function boot(){
 }
 async function api(method, path, data){
   const r = await fetch("/api" + path, {method, headers: data ? {"content-type": "application/json"} : {}, body: data ? JSON.stringify(data) : undefined, credentials: "same-origin"});
-  if (!r.ok) throw Object.assign(new Error("api"), {status: r.status});
+  if (!r.ok) throw Object.assign(new Error("api"), {status: r.status, body: await r.json().catch(() => null)});
   return r.json();
 }
 let stateV = null, pollTimer = null;
