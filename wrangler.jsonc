@@ -6,7 +6,7 @@
   // Only reachable on the Access-protected custom domain.
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "movies.mnthn.com", "custom_domain": true }],
+  "routes": [{ "pattern": "movies.mnthn.com", "custom_domain": true, "zone_name": "mnthn.com" }],
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/img"] },
   "d1_databases": [{ "binding": "DB", "database_name": "two-seat", "database_id": "915bb5a6-b2d2-4428-9fc2-67edba5435b1" }],
   "ai": { "binding": "AI" },
