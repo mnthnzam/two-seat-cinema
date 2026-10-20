@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "two-seat-cinema",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  // Only reachable on the Access-protected custom domain.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "movies.mnthn.com", "custom_domain": true }],
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/img"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "two-seat", "database_id": "REPLACE_WITH_D1_ID" }],
+  "ai": { "binding": "AI" },
+  "vars": {
+    // Fill these after setting up Access (see README): your team domain and the app's AUD tag.
+    "ACCESS_TEAM_DOMAIN": "REPLACE.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_WITH_AUD_TAG"
+  },
+  "observability": { "enabled": true }
+}
