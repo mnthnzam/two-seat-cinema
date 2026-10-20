@@ -240,8 +240,10 @@ export default {
       const cache = caches.default, key = new Request(target.toString());
       let r = await cache.match(key);
       if (!r) {
-        const up = await fetch(target.toString());
-        if (!up.ok) return bad("not found", 404);
+        let up;
+        try { up = await fetch(target.toString(), { headers: { "user-agent": "Mozilla/5.0 (TwoSeatCinema poster proxy)", accept: "image/*" } }); }
+        catch (e) { return bad("upstream fetch failed: " + (e && e.message), 502); }
+        if (!up.ok) return bad("upstream " + up.status, 502);
         r = new Response(up.body, { headers: { "content-type": up.headers.get("content-type") || "image/jpeg", "cache-control": "public, max-age=2592000" } });
         await cache.put(key, r.clone());
       }
